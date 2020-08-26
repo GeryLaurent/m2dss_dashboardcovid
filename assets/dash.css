@@ -1,0 +1,39 @@
+html, body {
+	margin: 0;
+	height: 100%;
+}
+
+.grid-container {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 0.9fr;
+  grid-template-rows: 0.2fr 0.6fr 1.6fr 1.6fr;
+  gap: 10px 10px;
+  grid-template-areas: "Title Title Title" "Filters Subtitle Subtitle" "Map Graph1 Graph2" "Map Graph3 Graph4";
+}
+
+.Map { grid-area: Map; }
+
+.Graph1 { grid-area: Graph1; }
+
+.Graph2 { grid-area: Graph2; }
+
+.Graph3 { grid-area: Graph3; }
+
+.Graph4 { grid-area: Graph4; }
+
+.Filters {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px 1px;
+  grid-template-areas: "Filter1" "Filter2";
+  grid-area: Filters;
+}
+
+.Filter1 { grid-area: Filter1; }
+
+.Filter2 { grid-area: Filter2; }
+
+.Title { grid-area: Title; }
+
+.Subtitle { grid-area: Subtitle; }

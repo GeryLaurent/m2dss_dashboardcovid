@@ -11,12 +11,13 @@ import dash_html_components as html
 
 import plotly.express as px
 import pandas as pd
+import numpy as np
 import datetime
 import json
 import requests, zipfile
 from io import BytesIO
 
-with open("departements.geojson") as f:
+with open(".\data\departements.geojson") as f:
     franceMap = json.load(f)
    
 sortedMap = dict(franceMap)
@@ -25,7 +26,7 @@ sortedMap['features'] = sorted(franceMap['features'], key=lambda x: x['propertie
 df = pd.read_csv("https://raw.githubusercontent.com/opencovid19-fr/data/master/dist/chiffres-cles.csv")
 dfDepartment = df[df['maille_code'].str.contains("DEP")]
 dfDepartment['code_dep'] = dfDepartment['maille_code'].str.split('-').str[1]
-dfDepartmentMet = dfDepartment[~dfDepartment['code_dep'].isin(['971','972','973','974','976']) ]
+dfDepartmentMet = dfDepartment[~dfDepartment['code_dep'].isin(['971','972','973','974','975','976','977','978']) ]
 
 
 # Données INSEE décès par département [1er mars au 31 juillet]
@@ -33,7 +34,7 @@ zipLink = requests.get('https://www.insee.fr/fr/statistiques/fichier/4487988/202
 zp = zipfile.ZipFile(BytesIO(zipLink.content))
 dfDeces = pd.read_csv(zp.open("2020-31-07_deces_quotidiens_departement_csv.csv"),sep=",")
 dfDeces['code_dep'] = dfDeces['Zone'].str.split('_').str[1]
-dfDecesMet = dfDeces[~dfDeces['code_dep'].isin(['971','972','973','974','976']) ].dropna(subset=['code_dep'])
+dfDecesMet = dfDeces[~dfDeces['code_dep'].isin(['971','972','973','974','975','976','977','978']) ].dropna(subset=['code_dep'])
 
 
 # Données hospitalières par département [total]
@@ -42,7 +43,7 @@ dfHospitMet = dfHospit[~dfHospit['dep'].isin(['971','972','973','974','976']) ]
 
 # Données hospitalières quotidiennes par département [nouveaux]
 dfHospitNew = pd.read_csv("https://www.data.gouv.fr/en/datasets/r/6fadff46-9efd-4c53-942a-54aca783c30c",sep=";")
-dfHospitNewMet = dfHospitNew[~dfHospitNew['dep'].isin(['971','972','973','974','976']) ]
+dfHospitNewMet = dfHospitNew[~dfHospitNew['dep'].isin(['971','972','973','974','975','976','977','978']) ]
 
 # Données test dépistage par département [ avant 29 mai 2020]
 # Metadonnées catégories age
@@ -57,7 +58,7 @@ E	75 et plus
 """
 
 dfDepistage = pd.read_csv("https://www.data.gouv.fr/en/datasets/r/b4ea7b4b-b7d1-4885-a099-71852291ff20",sep=";")
-dfDepistageMet = dfDepistage[~dfDepistage['dep'].isin(['971','972','973','974','976']) ]
+dfDepistageMet = dfDepistage[~dfDepistage['dep'].isin(['971','972','973','974','975','976','977','978']) ]
 
 # Données test dépistage par département [ après le 13 mai 2020]
 # Metadonnées catégories age
@@ -69,7 +70,7 @@ Code tranches d'age
 etc.
 """
 dfDepistageBis = pd.read_csv("https://www.data.gouv.fr/fr/datasets/r/406c6a23-e283-4300-9484-54e78c8ae675",sep=";")
-dfDepistageBisMet = dfDepistageBis[~dfDepistageBis['dep'].isin(['971','972','973','974','976']) ]
+dfDepistageBisMet = dfDepistageBis[~dfDepistageBis['dep'].isin(['971','972','973','974','975','976','977','978']) ]
 dfDepistageBisMet = dfDepistageBisMet[dfDepistageBisMet['cl_age90'] == 0]
 dfDepistageBisMet = dfDepistageBisMet.drop(['cl_age90'], axis=1)
 # Fusion des deux tables
@@ -116,7 +117,7 @@ A partir du 13 mai 2020
 dfDepistageBisMetCleaned = dfDepistageBisMet.drop(['P'], axis=1)
 df_1 = pd.merge(dfDepistageBisMetCleaned, dfIncidenceMet, how='left', on=['dep','jour']).drop(['pop'], axis=1)
 # Calcul du taux de positivité: (nombre de test positif / nombre de test réalisé)*100
-df_1['tx_pos'] = df_1['P'] / df_1['T'] * 100
+df_1['tx_pos'] = df_1['P'] / df_1['T']
 
 # Nombre de patients hospitalisés, en réanimation pour Covid-19
 dfHospitMetCleaned = dfHospitMet[dfHospitMet['sexe'] == 0].drop(['sexe','rad'], axis=1).sort_values(by=['dep','jour'])
@@ -130,43 +131,118 @@ dateList = dfMain['jour'].unique()
 firstDay = dateList[0]
 lastDay = dateList[-1]
 
-
-
-
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-#external_stylesheets = ['D:\chrcode\Dashboard_Demo\Prototype_indicateur\Style\Styles_proto_activite.css']
-
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
-
 # Génération de la carte de France par département
-df_1308 = dfMain[dfMain['jour']=="2020-08-13"]
+"""
+figMap = []
+for i in range(len(dateList)):
+    selectedDate = dateList[i]
+    dfMapDeces = dfMain[dfMain['jour'] == selectedDate].filter(['dep','incid_dc'])
+    figMap = px.choropleth_mapbox(dfMapDeces, geojson=sortedMap, locations='dep', featureidkey = 'properties.code', color='incid_dc',
+                               color_continuous_scale=['#ffffff', '#ff0000'],
+                               mapbox_style="carto-positron",
+                               zoom=4.7, center = {"lat": 46.5, "lon": 2.5},
+                               opacity=0.5,
+                               labels={'dep':'code du départment','incid_dc':'nombre de décès'}
+                              )
+    figMap.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+"""
 
-df1308_deces = df_1308.filter(['dep','incid_dc'])
+# Courbe du taux de positivité du test de dépistage avec courbe de tendance
+dfMain['timestamp']=pd.to_datetime(dfMain['jour'])
+dfMain['serialtime']=[(d-datetime.datetime(1970,1,1)).days for d in dfMain['timestamp']]
 
-import plotly.express as px
-import plotly.io as pio
-pio.renderers.default = "browser"
-fig = px.choropleth_mapbox(df1308_deces, geojson=sortedMap, locations='dep', featureidkey = 'properties.code', color='incid_dc',
-                           color_continuous_scale=['#ffffff', '#ff0000'],
-                           mapbox_style="carto-positron",
-                           zoom=5.4, center = {"lat": 46.5, "lon": 1},
-                           opacity=0.5,
-                           labels={'dep':'code du départment','incid_dc':'nombre de décès'}
-                          )
-fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+figTl = px.scatter(dfMain[dfMain['dep'] == "01"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage", trendline="ols", trendline_color_override='#ff9999')
+trendlineTl = figTl.data[1]
+figI = px.line(dfMain[dfMain['dep'] == "01"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage")
+figI.add_trace(trendlineTl)
+figI.update_xaxes(tickangle=45,
+                 tickmode = 'array',
+                 tickvals = dfMain[dfMain['dep'] == "01"]['serialtime'][1::7],
+                 ticktext= dfMain[dfMain['dep'] == "01"]['jour'][1::7])
+figI.update_layout(yaxis_tickformat = '%')
 
-app.layout = html.Div(children=[
-    html.H1(children='Nombre de décès quotidien'),
+# Courbe du nombre actuel d'hospitalisation
+figH = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="hosp", title="Nombre actuel d'hospitalisation")
 
-    html.Div(children='''
+
+# Courbe du nombre actuel de réanimation
+figR = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="rea", title="Nombre actuel de réanimation")
+
+
+# Courbe du nombre cumulé de décès
+figDc = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="dc", title="Nombre de décès cumulé")
+
+# Initialisation de Dash et mise en page
+app = dash.Dash(__name__)
+
+app.layout = html.Div(className="grid-container",
+                      style={'height':'100vh'},
+                      children=[
+    html.Div(className="Title", children='Nombre de décès quotidien'),
+
+    html.Div(className="Filters", 
+             children=[html.Div(className="Filter1",
+                                children=[
+                                    'Choix de la date: ',
+                                    dcc.DatePickerSingle(
+                                        className="Filters",
+                                        id='datePicker',
+                                        min_date_allowed=firstDay,
+                                        max_date_allowed=lastDay,
+                                        initial_visible_month=lastDay,
+                                        date=lastDay
+                                        )
+                                ])
+                       ]
+             ),
+    
+    html.Div(className="Subtitle", children='''
         Dash: A web application framework for Python.
     '''),
 
     dcc.Graph(
-        id='example-graph',
-        figure=fig
+        className="Map",
+        id='mapFr'
+    ),
+    dcc.Graph(
+        className="Graph1",
+        id='graphTest',
+        figure=figI
+    ),
+    dcc.Graph(
+        className="Graph2",
+        id='graphHospit',
+        figure=figH
+    ),
+    dcc.Graph(
+        className="Graph3",
+        id='graphRea',
+        figure=figR
+    ),
+    dcc.Graph(
+        className="Graph4",
+        id='graphDc',
+        figure=figDc
     )
 ])
+
+@app.callback(
+    dash.dependencies.Output('mapFr', 'figure'),
+    [dash.dependencies.Input('datePicker', 'date')])
+def update_graph(day_value):
+    dfMapDeces = dfMain[dfMain['jour'] == day_value].filter(['dep','incid_dc'])
+
+    figMap = px.choropleth_mapbox(dfMapDeces, geojson=sortedMap, locations='dep', featureidkey = 'properties.code', color='incid_dc',
+                               color_continuous_scale=['#ffffff', '#ff0000'],
+                               mapbox_style="carto-positron",
+                               zoom=4.7, center = {"lat": 46.5, "lon": 2.5},
+                               opacity=0.5,
+                               labels={'dep':'code du départment','incid_dc':'nombre de décès'}
+                              )
+    figMap.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+
+    return figMap
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
