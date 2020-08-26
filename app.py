@@ -17,7 +17,7 @@ import json
 import requests, zipfile
 from io import BytesIO
 
-with open(".\data\departements.geojson") as f:
+with open("departements.geojson") as f:
     franceMap = json.load(f)
    
 sortedMap = dict(franceMap)
