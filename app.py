@@ -173,6 +173,8 @@ figR = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="rea", title="Nombre a
 figDc = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="dc", title="Nombre de décès cumulé")
 
 # Initialisation de Dash et mise en page
+server = app.server
+
 app = dash.Dash(__name__)
 
 app.layout = html.Div(className="grid-container",
