@@ -17,6 +17,7 @@ import json
 import requests, zipfile
 from io import BytesIO
 
+#with open("D:\CovidProject\departements.geojson") as f:
 with open("departements.geojson") as f:
     franceMap = json.load(f)
    
@@ -99,9 +100,12 @@ dfIncidenceMet = dfIncidence[~dfIncidence['dep'].isin(['971','972','973','974','
 
 
 dfDepartmentMet = dfDepartmentMet.sort_values(by=['code_dep'])
+
+# Dictionnaire de liaison des départements et de leur code
 codeDepList = dfDepartmentMet['code_dep'].unique()
 codeDepName = dfDepartmentMet['maille_nom'].unique()
-
+dictDepLink = dict(zip(codeDepList,codeDepName))
+dictDepLink.update( {'FR': 'France métropolitaine'})
 """
 RESUME DES INFORMATIONS FIABLES A DISPOSITION PAR DEPARTEMENT
 A partir du 13 mai 2020
@@ -115,7 +119,7 @@ A partir du 13 mai 2020
 
 # Nombre de tests positifs, testés et incidence
 dfDepistageBisMetCleaned = dfDepistageBisMet.drop(['P'], axis=1)
-df_1 = pd.merge(dfDepistageBisMetCleaned, dfIncidenceMet, how='left', on=['dep','jour']).drop(['pop'], axis=1)
+df_1 = pd.merge(dfDepistageBisMetCleaned, dfIncidenceMet, how='left', on=['dep','jour'])
 # Calcul du taux de positivité: (nombre de test positif / nombre de test réalisé)*100
 df_1['tx_pos'] = df_1['P'] / df_1['T']
 
@@ -130,6 +134,14 @@ dfMain = pd.merge(df_1, df_2, how='left', on=['dep','jour'])
 dateList = dfMain['jour'].unique()
 firstDay = dateList[0]
 lastDay = dateList[-1]
+
+# Somme des colonnes pour avoir les chiffres pour la France Métropolitaine
+dfMainSumFr = dfMain.drop(['dep','tx_std','incid_hosp','incid_rea','incid_dc','tx_pos'], axis=1).groupby(['jour']).sum(min_count=len(codeDepList)-1).reset_index()
+dfMainSumFr['tx_pos'] = dfMainSumFr['P'] / dfMainSumFr['T']
+dfMainSumFr['dep'] = "FR"
+
+# Merge des deux dataframes en un dataframe centralisé
+dfMainIncFr = pd.concat([dfMainSumFr, dfMain.drop(['tx_std','incid_hosp','incid_rea','incid_dc'], axis=1)])
 
 # Génération de la carte de France par département
 """
@@ -147,32 +159,35 @@ for i in range(len(dateList)):
     figMap.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
 """
 
-# Courbe du taux de positivité du test de dépistage avec courbe de tendance
-dfMain['timestamp']=pd.to_datetime(dfMain['jour'])
-dfMain['serialtime']=[(d-datetime.datetime(1970,1,1)).days for d in dfMain['timestamp']]
+#### Génération des courbes par défaut à l'ouverture du dashboard
 
-figTl = px.scatter(dfMain[dfMain['dep'] == "01"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage", trendline="ols", trendline_color_override='#ff9999')
+# Courbe du taux de positivité du test de dépistage avec courbe de tendance
+dfMainIncFr['timestamp']=pd.to_datetime(dfMainIncFr['jour'])
+dfMainIncFr['serialtime']=[(d-datetime.datetime(1970,1,1)).days for d in dfMainIncFr['timestamp']]
+
+figTl = px.scatter(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage", trendline="ols", trendline_color_override='#ff9999')
 trendlineTl = figTl.data[1]
-figI = px.line(dfMain[dfMain['dep'] == "01"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage")
+figI = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage")
 figI.add_trace(trendlineTl)
 figI.update_xaxes(tickangle=45,
-                 tickmode = 'array',
-                 tickvals = dfMain[dfMain['dep'] == "01"]['serialtime'][1::7],
-                 ticktext= dfMain[dfMain['dep'] == "01"]['jour'][1::7])
+                tickmode = 'array',
+                tickvals = dfMainIncFr[dfMainIncFr['dep'] == "FR"]['serialtime'][1::7],
+                ticktext= dfMainIncFr[dfMainIncFr['dep'] == "FR"]['jour'][1::7])
 figI.update_layout(yaxis_tickformat = '%')
 
 # Courbe du nombre actuel d'hospitalisation
-figH = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="hosp", title="Nombre actuel d'hospitalisation")
+figH = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="hosp", title="Nombre actuel d'hospitalisation")
 
 
 # Courbe du nombre actuel de réanimation
-figR = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="rea", title="Nombre actuel de réanimation")
+figR = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="rea", title="Nombre actuel de réanimation")
 
 
 # Courbe du nombre cumulé de décès
-figDc = px.line(dfMain[dfMain['dep'] == "01"], x="jour", y="dc", title="Nombre de décès cumulé")
+figDc = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="dc", title="Nombre de décès cumulé")
 
 # Initialisation de Dash et mise en page
+
 
 
 app = dash.Dash(__name__)
@@ -181,27 +196,41 @@ server = app.server
 app.layout = html.Div(className="grid-container",
                       style={'height':'100vh'},
                       children=[
-    html.Div(className="Title", children='Nombre de décès quotidien'),
+    dcc.Markdown(className="Title", children='**Tableau de bord Covid-19: situation en France métropolitaine**'),
 
     html.Div(className="Filters", 
              children=[html.Div(className="Filter1",
                                 children=[
                                     'Choix de la date: ',
                                     dcc.DatePickerSingle(
-                                        className="Filters",
                                         id='datePicker',
                                         min_date_allowed=firstDay,
                                         max_date_allowed=lastDay,
                                         initial_visible_month=lastDay,
                                         date=lastDay
                                         )
-                                ])
+                                ]),
+                       html.Div(className="Filter2",
+                                children=[
+                                    'Choix de la variable: ',
+                                    dcc.RadioItems(
+                                        id='variablePicker',
+                                        options=[
+                                            {'label': 'Décès quotidien', 'value': 'incid_dc'},
+                                            {'label': "Taux d'incidence", 'value': 'tx_std'},
+                                            {'label': 'Nouvelles Hospitalisations', 'value': 'incid_hosp'},
+                                            {'label': 'Nouvelles Réanimations', 'value': 'incid_rea'} 
+                                        ],
+                                        value='incid_dc',
+                                        labelStyle={'display': 'inline-block'}
+                                        )
+                                    ])
                        ]
              ),
     
-    html.Div(className="Subtitle", children='''
-        Dash: A web application framework for Python.
-    '''),
+    dcc.Markdown(className="Subtitle", 
+             id='dep_selected'
+             ),
 
     dcc.Graph(
         className="Map",
@@ -210,7 +239,7 @@ app.layout = html.Div(className="grid-container",
     dcc.Graph(
         className="Graph1",
         id='graphTest',
-        figure=figI
+        figure=figTl
     ),
     dcc.Graph(
         className="Graph2",
@@ -231,21 +260,112 @@ app.layout = html.Div(className="grid-container",
 
 @app.callback(
     dash.dependencies.Output('mapFr', 'figure'),
-    [dash.dependencies.Input('datePicker', 'date')])
-def update_graph(day_value):
-    dfMapDeces = dfMain[dfMain['jour'] == day_value].filter(['dep','incid_dc'])
+    [dash.dependencies.Input('datePicker', 'date'),
+     dash.dependencies.Input('variablePicker','value')])
+def update_graph(day_value,variable):
+    
+    dictOptions = {
+        'incid_dc': {'color':['#ffffff', '#ff0000'],
+                     'label': "Décès Quotidien"},
+        'tx_std': {'color':['#ffffff', '#8000ff'],
+                     'label': "Taux d'incidence"},
+        'incid_hosp': {'color':['#ffffff', '#0066ff'],
+                     'label': "Nouvelles Hospitalisations"},
+        'incid_rea': {'color':['#ffffff', '#ff6600'],
+                     'label': "Nouvelles Réanimations"}
+        }
+    dfMapVariable = dfMain[dfMain['jour'] == day_value].filter(['dep',variable])
 
-    figMap = px.choropleth_mapbox(dfMapDeces, geojson=sortedMap, locations='dep', featureidkey = 'properties.code', color='incid_dc',
-                               color_continuous_scale=['#ffffff', '#ff0000'],
+    figMap = px.choropleth_mapbox(dfMapVariable, geojson=sortedMap, locations='dep', featureidkey = 'properties.code', color=variable,
+                               color_continuous_scale=dictOptions[variable]['color'],
                                mapbox_style="carto-positron",
                                zoom=4.7, center = {"lat": 46.5, "lon": 2.5},
-                               opacity=0.5,
-                               labels={'dep':'code du départment','incid_dc':'nombre de décès'}
+                               opacity=0.7,
+                               labels={'dep':'code du départment',variable : dictOptions[variable]['label']}
                               )
-    figMap.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-
+    figMap.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
+                         clickmode='event+select')
+    
     return figMap
 
+@app.callback(
+    dash.dependencies.Output('dep_selected', 'children'),
+    [dash.dependencies.Input('mapFr', 'selectedData')])
+def display_selected_data(selectedData):
+    if selectedData is None:
+        dep = "FR"
+    else:
+        dep = selectedData['points'][0]['location']
+        
+    depName = dictDepLink[dep]
+    popNb = dfMainIncFr[dfMainIncFr['dep'] == dep]['pop'].unique()[0]
+    
+    text = "**Zone sélectionnée: **" + depName + " ( " + dep + " )" + "** - Population: **" + str(popNb)
+    return text
+
+@app.callback(
+    dash.dependencies.Output('graphTest', 'figure'),
+    [dash.dependencies.Input('mapFr', 'selectedData')])
+def update_curve1(selectedData):    
+
+    if selectedData is None:
+        dep = "FR"
+    else:
+        dep = selectedData['points'][0]['location']
+        
+    figTl = px.scatter(dfMainIncFr[dfMainIncFr['dep'] == dep], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage", trendline="ols", trendline_color_override='#ff9999')
+    trendlineTl = figTl.data[1]
+    figI = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage")
+    figI.add_trace(trendlineTl)
+    figI.update_xaxes(tickangle=45,
+                     tickmode = 'array',
+                     tickvals = dfMainIncFr[dfMainIncFr['dep'] == dep]['serialtime'][1::7],
+                     ticktext= dfMainIncFr[dfMainIncFr['dep'] == dep]['jour'][1::7])
+    figI.update_layout(yaxis_tickformat = '%')
+
+    return figI
+
+@app.callback(
+    dash.dependencies.Output('graphHospit', 'figure'),
+    [dash.dependencies.Input('mapFr', 'selectedData')])
+def update_curve2(selectedData):    
+
+    if selectedData is None:
+        dep = "FR"
+    else:
+        dep = selectedData['points'][0]['location']
+        
+    figH = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="hosp", title="Nombre actuel d'hospitalisation")
+
+    return figH
+
+@app.callback(
+    dash.dependencies.Output('graphRea', 'figure'),
+    [dash.dependencies.Input('mapFr', 'selectedData')])
+def update_curve3(selectedData):    
+
+    if selectedData is None:
+        dep = "FR"
+    else:
+        dep = selectedData['points'][0]['location']
+        
+    figR = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="rea", title="Nombre actuel de réanimation")
+
+    return figR
+
+@app.callback(
+    dash.dependencies.Output('graphDc', 'figure'),
+    [dash.dependencies.Input('mapFr', 'selectedData')])
+def update_curve4(selectedData):    
+
+    if selectedData is None:
+        dep = "FR"
+    else:
+        dep = selectedData['points'][0]['location']
+        
+    figDc = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="dc", title="Nombre de décès cumulé")
+
+    return figDc
 
 if __name__ == '__main__':
     app.run_server(debug=True)
