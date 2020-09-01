@@ -5,18 +5,26 @@ Created on Sat Aug 15 10:43:51 2020
 @author: Gery
 """
 
+# Libraries import part
+
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
 
+
 import plotly.express as px
 import pandas as pd
-import numpy as np
+pd.options.mode.chained_assignment = None
 import datetime
 import json
 import requests, zipfile
 from io import BytesIO
 
+########################################
+# Data collection & Data management
+########################################
+
+# Open geojson department data for France
 #with open("D:\CovidProject\departements.geojson") as f:
 with open("departements.geojson") as f:
     franceMap = json.load(f)
@@ -24,15 +32,16 @@ with open("departements.geojson") as f:
 sortedMap = dict(franceMap)
 sortedMap['features'] = sorted(franceMap['features'], key=lambda x: x['properties']['code'])
 
+# Export Department information
 df = pd.read_csv("https://raw.githubusercontent.com/opencovid19-fr/data/master/dist/chiffres-cles.csv")
 dfDepartment = df[df['maille_code'].str.contains("DEP")]
 dfDepartment['code_dep'] = dfDepartment['maille_code'].str.split('-').str[1]
-dfDepartmentMet = dfDepartment[~dfDepartment['code_dep'].isin(['971','972','973','974','975','976','977','978']) ]
+dfDepartmentMet = dfDepartment[~dfDepartment['code_dep'].isin(['971','972','973','974','975','976','977','978']) ] # Remove overseas departments
 
 
 # Données INSEE décès par département [1er mars au 31 juillet]
 zipLink = requests.get('https://www.insee.fr/fr/statistiques/fichier/4487988/2020-07-31_deces_quotidiens_departement_csv.zip', stream=True)
-zp = zipfile.ZipFile(BytesIO(zipLink.content))
+zp = zipfile.ZipFile(BytesIO(zipLink.content)) # Read zip file
 dfDeces = pd.read_csv(zp.open("2020-31-07_deces_quotidiens_departement_csv.csv"),sep=",")
 dfDeces['code_dep'] = dfDeces['Zone'].str.split('_').str[1]
 dfDecesMet = dfDeces[~dfDeces['code_dep'].isin(['971','972','973','974','975','976','977','978']) ].dropna(subset=['code_dep'])
@@ -41,11 +50,11 @@ dfDecesMet = dfDeces[~dfDeces['code_dep'].isin(['971','972','973','974','975','9
 # Données hospitalières par département [total]
 dfHospit = pd.read_csv("https://www.data.gouv.fr/en/datasets/r/63352e38-d353-4b54-bfd1-f1b3ee1cabd7",sep=";")
 dfHospitMet = dfHospit[~dfHospit['dep'].isin(['971','972','973','974','976']) ]
-
+dfHospitMet.loc['jour'] = dfHospitMet['jour'].apply(lambda x: x if x.startswith('2020') else datetime.datetime.strptime(x, '%d/%m/%Y').strftime('%Y-%m-%d')) # Date conversion to correct datetime errors in the data
 # Données hospitalières quotidiennes par département [nouveaux]
 dfHospitNew = pd.read_csv("https://www.data.gouv.fr/en/datasets/r/6fadff46-9efd-4c53-942a-54aca783c30c",sep=";")
 dfHospitNewMet = dfHospitNew[~dfHospitNew['dep'].isin(['971','972','973','974','975','976','977','978']) ]
-
+dfHospitNewMet['jour'] = dfHospitNewMet['jour'].apply(lambda x: x if x.startswith('2020') else datetime.datetime.strptime(x, '%d/%m/%Y').strftime('%Y-%m-%d'))
 # Données test dépistage par département [ avant 29 mai 2020]
 # Metadonnées catégories age
 """
@@ -115,6 +124,9 @@ A partir du 13 mai 2020
 - hosp: nombre total de patients hospitalisés à ce jour
 - rea: nombre total de patients en réanimation à ce jour
 - dc: nombre total de patients décédés à ce jour
+- incid_hosp: nombre de nouveaux patients hospitalisés dans la journée
+- incid_rea: nombre de nouveaux patients en réanimation dans la journée
+- incid_dc: nombre de nouveaux patients décédés dans la journée
 """
 
 # Nombre de tests positifs, testés et incidence
@@ -142,29 +154,17 @@ dfMainSumFr['dep'] = "FR"
 
 # Merge des deux dataframes en un dataframe centralisé
 dfMainIncFr = pd.concat([dfMainSumFr, dfMain.drop(['tx_std','incid_hosp','incid_rea','incid_dc'], axis=1)])
+dfMainIncFr['timestamp']=pd.to_datetime(dfMainIncFr['jour'])
+dfMainIncFr['serialtime']=[(d-datetime.datetime(1970,1,1)).days for d in dfMainIncFr['timestamp']]
 
-# Génération de la carte de France par département
-"""
-figMap = []
-for i in range(len(dateList)):
-    selectedDate = dateList[i]
-    dfMapDeces = dfMain[dfMain['jour'] == selectedDate].filter(['dep','incid_dc'])
-    figMap = px.choropleth_mapbox(dfMapDeces, geojson=sortedMap, locations='dep', featureidkey = 'properties.code', color='incid_dc',
-                               color_continuous_scale=['#ffffff', '#ff0000'],
-                               mapbox_style="carto-positron",
-                               zoom=4.7, center = {"lat": 46.5, "lon": 2.5},
-                               opacity=0.5,
-                               labels={'dep':'code du départment','incid_dc':'nombre de décès'}
-                              )
-    figMap.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
-"""
+
+########################################
+# Data visualisation
+########################################
 
 #### Génération des courbes par défaut à l'ouverture du dashboard
 
 # Courbe du taux de positivité du test de dépistage avec courbe de tendance
-dfMainIncFr['timestamp']=pd.to_datetime(dfMainIncFr['jour'])
-dfMainIncFr['serialtime']=[(d-datetime.datetime(1970,1,1)).days for d in dfMainIncFr['timestamp']]
-
 figTl = px.scatter(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage", trendline="ols", trendline_color_override='#ff9999')
 trendlineTl = figTl.data[1]
 figI = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="serialtime", y="tx_pos",title="Taux de positivité du test de dépistage")
@@ -174,21 +174,27 @@ figI.update_xaxes(tickangle=45,
                 tickvals = dfMainIncFr[dfMainIncFr['dep'] == "FR"]['serialtime'][1::7],
                 ticktext= dfMainIncFr[dfMainIncFr['dep'] == "FR"]['jour'][1::7])
 figI.update_layout(yaxis_tickformat = '%')
+figI.update_xaxes(title_text='')
+figI.update_yaxes(title_text='Taux de positivité')
 
 # Courbe du nombre actuel d'hospitalisation
-figH = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="hosp", title="Nombre actuel d'hospitalisation")
-
+figH = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="hosp", title="Nombre actuel d'hospitalisation pour covid-19")
+figH.update_xaxes(title_text='')
+figH.update_yaxes(title_text="nombre de patients")
 
 # Courbe du nombre actuel de réanimation
-figR = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="rea", title="Nombre actuel de réanimation")
-
+figR = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="rea", title="Nombre actuel de patients covid-19 en réanimation")
+figR.update_xaxes(title_text='')
+figR.update_yaxes(title_text="nombre de patients")
 
 # Courbe du nombre cumulé de décès
-figDc = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="dc", title="Nombre de décès cumulé")
+figDc = px.line(dfMainIncFr[dfMainIncFr['dep'] == "FR"], x="jour", y="dc", title="Nombre de décès cumulé à l'hôpital lié au covid-19")
+figDc.update_xaxes(title_text='')
+figDc.update_yaxes(title_text="nombre de décès")
 
+########################################
 # Initialisation de Dash et mise en page
-
-
+########################################
 
 app = dash.Dash(__name__)
 server = app.server
@@ -202,7 +208,7 @@ app.layout = html.Div(className="grid-container",
              children=[html.Div(className="Filter1",
                                 children=[
                                     'Choix de la date: ',
-                                    dcc.DatePickerSingle(
+                                    dcc.DatePickerSingle( # Interactive calendar for day selection
                                         id='datePicker',
                                         min_date_allowed=firstDay,
                                         max_date_allowed=lastDay,
@@ -213,10 +219,10 @@ app.layout = html.Div(className="grid-container",
                        html.Div(className="Filter2",
                                 children=[
                                     'Choix de la variable: ',
-                                    dcc.RadioItems(
+                                    dcc.RadioItems( # Tick box for variable selection
                                         id='variablePicker',
                                         options=[
-                                            {'label': 'Décès quotidien', 'value': 'incid_dc'},
+                                            {'label': "Décès quotidien à l'hôpital", 'value': 'incid_dc'},
                                             {'label': "Taux d'incidence", 'value': 'tx_std'},
                                             {'label': 'Nouvelles Hospitalisations', 'value': 'incid_hosp'},
                                             {'label': 'Nouvelles Réanimations', 'value': 'incid_rea'} 
@@ -232,37 +238,39 @@ app.layout = html.Div(className="grid-container",
              id='dep_selected'
              ),
 
-    dcc.Graph(
+    dcc.Graph( # Carte de France métropolitaine et départements
         className="Map",
         id='mapFr'
     ),
-    dcc.Graph(
+    dcc.Graph( # Courbe du taux de positivité du test de dépistage avec courbe de tendance
         className="Graph1",
         id='graphTest',
         figure=figTl
     ),
-    dcc.Graph(
+    dcc.Graph( # Courbe du nombre actuel d'hospitalisation
         className="Graph2",
         id='graphHospit',
         figure=figH
     ),
-    dcc.Graph(
+    dcc.Graph( # Courbe du nombre actuel de réanimation
         className="Graph3",
         id='graphRea',
         figure=figR
     ),
-    dcc.Graph(
+    dcc.Graph( # Courbe du nombre cumulé de décès
         className="Graph4",
         id='graphDc',
         figure=figDc
-    )
+    ),
+    dcc.Markdown(className="Author", children='Dashboard créé par Géry LAURENT'),
+    dcc.Markdown(className="Source", children='''Source: [data.gouv.fr](https://www.data.gouv.fr)'''),    
 ])
 
 @app.callback(
     dash.dependencies.Output('mapFr', 'figure'),
     [dash.dependencies.Input('datePicker', 'date'),
      dash.dependencies.Input('variablePicker','value')])
-def update_graph(day_value,variable):
+def update_graph(day_value,variable): # Function to update map based on selected variable
     
     dictOptions = {
         'incid_dc': {'color':['#ffffff', '#ff0000'],
@@ -291,7 +299,7 @@ def update_graph(day_value,variable):
 @app.callback(
     dash.dependencies.Output('dep_selected', 'children'),
     [dash.dependencies.Input('mapFr', 'selectedData')])
-def display_selected_data(selectedData):
+def display_selected_data(selectedData): # Function to change subtitle based on selected department
     if selectedData is None:
         dep = "FR"
     else:
@@ -306,7 +314,7 @@ def display_selected_data(selectedData):
 @app.callback(
     dash.dependencies.Output('graphTest', 'figure'),
     [dash.dependencies.Input('mapFr', 'selectedData')])
-def update_curve1(selectedData):    
+def update_curve1(selectedData):     # Function to update curve 1 based on selected department
 
     if selectedData is None:
         dep = "FR"
@@ -322,49 +330,53 @@ def update_curve1(selectedData):
                      tickvals = dfMainIncFr[dfMainIncFr['dep'] == dep]['serialtime'][1::7],
                      ticktext= dfMainIncFr[dfMainIncFr['dep'] == dep]['jour'][1::7])
     figI.update_layout(yaxis_tickformat = '%')
-
+    figI.update_xaxes(title_text='')
+    figI.update_yaxes(title_text='Taux de positivité')
     return figI
 
 @app.callback(
     dash.dependencies.Output('graphHospit', 'figure'),
     [dash.dependencies.Input('mapFr', 'selectedData')])
-def update_curve2(selectedData):    
+def update_curve2(selectedData):   # Function to update curve 2 based on selected department  
 
     if selectedData is None:
         dep = "FR"
     else:
         dep = selectedData['points'][0]['location']
         
-    figH = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="hosp", title="Nombre actuel d'hospitalisation")
-
+    figH = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="hosp", title="Nombre actuel d'hospitalisation pour covid-19")
+    figH.update_xaxes(title_text='')
+    figH.update_yaxes(title_text="nombre de patients")
     return figH
 
 @app.callback(
     dash.dependencies.Output('graphRea', 'figure'),
     [dash.dependencies.Input('mapFr', 'selectedData')])
-def update_curve3(selectedData):    
+def update_curve3(selectedData):  # Function to update curve 3 based on selected department  
 
     if selectedData is None:
         dep = "FR"
     else:
         dep = selectedData['points'][0]['location']
         
-    figR = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="rea", title="Nombre actuel de réanimation")
-
+    figR = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="rea", title="Nombre actuel de patients covid-19 en réanimation")
+    figR.update_xaxes(title_text='')
+    figR.update_yaxes(title_text="nombre de patients")
     return figR
 
 @app.callback(
     dash.dependencies.Output('graphDc', 'figure'),
     [dash.dependencies.Input('mapFr', 'selectedData')])
-def update_curve4(selectedData):    
+def update_curve4(selectedData):  # Function to update curve 4 based on selected department  
 
     if selectedData is None:
         dep = "FR"
     else:
         dep = selectedData['points'][0]['location']
         
-    figDc = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="dc", title="Nombre de décès cumulé")
-
+    figDc = px.line(dfMainIncFr[dfMainIncFr['dep'] == dep], x="jour", y="dc", title="Nombre de décès cumulé à l'hôpital lié au covid-19")
+    figDc.update_xaxes(title_text='')
+    figDc.update_yaxes(title_text="nombre de décès")
     return figDc
 
 if __name__ == '__main__':

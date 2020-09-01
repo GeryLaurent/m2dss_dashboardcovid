@@ -6,9 +6,9 @@ html, body {
 .grid-container {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr;
-  grid-template-rows: 0.2fr 0.6fr 1.6fr 1.6fr;
+  grid-template-rows: 0.2fr 0.6fr 1.6fr 1.6fr 0.1fr;
   gap: 10px 10px;
-  grid-template-areas: "Title Title Title" "Filters Subtitle Subtitle" "Map Graph1 Graph2" "Map Graph3 Graph4";
+  grid-template-areas: "Title Title Title" "Filters Subtitle Subtitle" "Map Graph1 Graph2" "Map Graph3 Graph4" "Author Author Source";
 }
 
 .Map { grid-area: Map; }
@@ -45,3 +45,6 @@ html, body {
 .Subtitle > p { position: absolute;
 			   bottom:0 ;
 			   vertical-align: bottom;}
+			   
+.Author { grid-area: Author; }
+.Source { grid-area: Source; }
