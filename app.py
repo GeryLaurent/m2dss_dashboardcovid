@@ -50,7 +50,7 @@ dfDecesMet = dfDeces[~dfDeces['code_dep'].isin(['971','972','973','974','975','9
 # Données hospitalières par département [total]
 dfHospit = pd.read_csv("https://www.data.gouv.fr/en/datasets/r/63352e38-d353-4b54-bfd1-f1b3ee1cabd7",sep=";")
 dfHospitMet = dfHospit[~dfHospit['dep'].isin(['971','972','973','974','976']) ]
-dfHospitMet.loc['jour'] = dfHospitMet['jour'].apply(lambda x: x if x.startswith('2020') else datetime.datetime.strptime(x, '%d/%m/%Y').strftime('%Y-%m-%d')) # Date conversion to correct datetime errors in the data
+dfHospitMet['jour'] = dfHospitMet['jour'].apply(lambda x: x if x.startswith('2020') else datetime.datetime.strptime(x, '%d/%m/%Y').strftime('%Y-%m-%d')) # Date conversion to correct datetime errors in the data
 # Données hospitalières quotidiennes par département [nouveaux]
 dfHospitNew = pd.read_csv("https://www.data.gouv.fr/en/datasets/r/6fadff46-9efd-4c53-942a-54aca783c30c",sep=";")
 dfHospitNewMet = dfHospitNew[~dfHospitNew['dep'].isin(['971','972','973','974','975','976','977','978']) ]
